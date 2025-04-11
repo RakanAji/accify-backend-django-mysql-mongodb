@@ -4,6 +4,7 @@ from django.db import models
 class User(AbstractUser):
     email = models.EmailField(unique=True)
     is_active = models.BooleanField(default=True)
+    fcm_token = models.CharField(max_length=255, blank=True, null=True)
 
 class Contact(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="contacts")
@@ -12,3 +13,4 @@ class Contact(models.Model):
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     city = models.CharField(max_length=100, null=True, blank=True)
+    device_id = models.CharField(max_length=100, null=True, blank=True)

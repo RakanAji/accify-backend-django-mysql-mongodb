@@ -9,6 +9,9 @@ from accounts.serializers import ContactSerializer, UserSerializer
 from accounts.models import Contact, User
 from django.contrib.auth import authenticate
 
+from tracking.serializers import IoTDeviceSerializer
+from tracking.models import IoTDevice
+
 
 class SignUpView(APIView):
     def post(self, request):
@@ -41,15 +44,14 @@ class SignOutView(APIView):
         return Response({'message': 'Logged out successfully.'}, status=status.HTTP_200_OK)
 
 
+# accounts/views.py (potongan kode untuk AddContactView)
 class AddContactView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        print("User:", request.user)
-        print("Is Authenticated:", request.user.is_authenticated)
-
-        contact_username = request.data.get('contact_username')  # Username of the contact to add
-        phone_number = request.data.get('phone_number')  # Nomor HP dari request
+        contact_username = request.data.get('contact_username')
+        phone_number = request.data.get('phone_number')
+        device_id = request.data.get('device_id')  # Ambil device_id dari request
 
         try:
             contact_user = User.objects.get(username=contact_username)
@@ -57,19 +59,17 @@ class AddContactView(APIView):
                 return Response({'error': 'You cannot add yourself as a contact.'}, status=status.HTTP_400_BAD_REQUEST)
 
             contact, created = Contact.objects.get_or_create(user=request.user, contact=contact_user)
+            # Set atau perbarui data yang dikirim
+            contact.phone_number = phone_number
+            contact.device_id = device_id  # Simpan device_id
+            contact.save()
             if created:
-                # Jika kontak baru dibuat, tambahkan nomor HP
-                contact.phone_number = phone_number
-                contact.save()
                 return Response({'message': 'Contact added successfully.'}, status=status.HTTP_201_CREATED)
             else:
-                # Jika kontak sudah ada, perbarui nomor HP jika diperlukan
-                if phone_number:
-                    contact.phone_number = phone_number
-                    contact.save()
-                return Response({'message': 'Contact already exists, phone number updated.'}, status=status.HTTP_200_OK)
+                return Response({'message': 'Contact already exists, data updated.'}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'Contact user does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+
 
 
 
@@ -118,3 +118,14 @@ class UpdateContactLocationView(APIView):
             return Response({'message': 'Location updated successfully.'}, status=status.HTTP_200_OK)
         except Contact.DoesNotExist:
             return Response({'error': 'Contact not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+class UpdateFCMTokenView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        token = request.data.get('fcm_token')
+        if token:
+            request.user.fcm_token = token
+            request.user.save()
+            return Response({'message': 'FCM token updated successfully.'}, status=200)
+        return Response({'error': 'No FCM token provided.'}, status=400)

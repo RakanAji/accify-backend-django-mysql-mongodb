@@ -33,6 +33,11 @@ class MongoDBManager:
             'latitude': data.get('latitude'),
             'longitude': data.get('longitude'),
             'speed': data.get('speed', 0),
+            'angle': data.get('angle'),
+            'tilt_x': data.get('tilt_x'),
+            'tilt_y': data.get('tilt_y'),
+            'direction_x': data.get('direction_x'),
+            'direction_y': data.get('direction_y'),
             'is_accident': data.get('is_accident', False),
             'additional_data': data.get('additional_data', {})
         }

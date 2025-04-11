@@ -12,6 +12,11 @@ class LocationDataSerializer(serializers.Serializer):
     latitude = serializers.FloatField()
     longitude = serializers.FloatField()
     speed = serializers.FloatField(required=False, default=0)
+    angle = serializers.FloatField(required=False)  # Tambahan dari Arduino
+    tilt_x = serializers.FloatField(required=False)
+    tilt_y = serializers.FloatField(required=False)
+    direction_x = serializers.CharField(required=False, allow_blank=True)
+    direction_y = serializers.CharField(required=False, allow_blank=True)
     is_accident = serializers.BooleanField(required=False, default=False)
     additional_data = serializers.JSONField(required=False)
 

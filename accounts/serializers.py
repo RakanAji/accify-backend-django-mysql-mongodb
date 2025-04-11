@@ -25,5 +25,5 @@ class UserSerializer(serializers.ModelSerializer):
 class ContactSerializer(serializers.ModelSerializer):
     class Meta:
         model = Contact
-        fields = ['user', 'contact', 'phone_number', 'latitude', 'longitude', 'city']
+        fields = ['user', 'contact', 'phone_number', 'latitude', 'longitude', 'city', 'device_id']
         extra_kwargs = {'user': {'read_only': True}}

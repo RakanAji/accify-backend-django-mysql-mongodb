@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AddContactView, SignUpView, SignInView, SignOutView, UserDetailView, UpdateContactLocationView
+from .views import AddContactView, SignUpView, SignInView, SignOutView, UserDetailView, UpdateContactLocationView, UpdateFCMTokenView
 
 urlpatterns = [
     path('signup/', SignUpView.as_view(), name='signup'),
@@ -8,4 +8,5 @@ urlpatterns = [
     path('add_contact/', AddContactView.as_view(), name='add_contact'),
     path('contact_location/', UpdateContactLocationView.as_view(), name='contact_location'),
     path('me/', UserDetailView.as_view(), name='user_detail'),  # Endpoint untuk mengambil data user
+    path('update_fcm_token/', UpdateFCMTokenView.as_view(), name='update_fcm_token'),
 ]

@@ -229,3 +229,41 @@ class AccidentHistoryView(APIView):
         accidents.sort(key=lambda x: x['timestamp'], reverse=True)
         
         return Response(accidents)
+    
+class ContactRealtimeTrackingView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Mengembalikan daftar kontak user beserta data realtime (lokasi, kecepatan) yang diambil dari MongoDB.
+        User harus memiliki kontak yang sudah terdaftar dengan device_id.
+        """
+        # Ambil daftar kontak user dari MySQL
+        contacts = Contact.objects.filter(user=request.user)
+        mongo_manager = MongoDBManager()
+        result = []
+
+        for contact in contacts:
+            # Pastikan kontak memiliki device_id
+            if not contact.device_id:
+                continue
+
+            # Ambil data realtime dari MongoDB berdasarkan device_id kontak
+            realtime_data = mongo_manager.get_recent_location(contact.device_id, limit=1)
+            if realtime_data:
+                # Ambil data terbaru (misalnya, data pertama dari list)
+                data = realtime_data[0]
+                # Ubah ObjectId ke string jika diperlukan
+                data['_id'] = str(data['_id'])
+            else:
+                data = None
+
+            result.append({
+                'contact_username': contact.contact.username,
+                'contact_email': contact.contact.email,
+                'phone_number': contact.phone_number,
+                'device_id': contact.device_id,
+                'realtime_data': data  # bisa berisi latitude, longitude, speed, timestamp, dsb.
+            })
+
+        return Response(result, status=status.HTTP_200_OK)
