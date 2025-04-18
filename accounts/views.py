@@ -44,7 +44,7 @@ class SignOutView(APIView):
         return Response({'message': 'Logged out successfully.'}, status=status.HTTP_200_OK)
 
 
-# accounts/views.py (potongan kode untuk AddContactView)
+
 class AddContactView(APIView):
     permission_classes = [IsAuthenticated]
 

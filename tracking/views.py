@@ -13,6 +13,7 @@ from firebase_admin import credentials
 import os
 from django.conf import settings
 import requests
+import uuid
 
 # Inisialisasi Firebase untuk notifikasi (Anda perlu menambahkan konfigurasi ini)
 try:
@@ -22,14 +23,42 @@ try:
 except Exception as e:
     print(f"Error initializing Firebase: {e}")
 
+class DevicePairingView(APIView):
+    """
+    Endpoint pairing untuk mengkonversi ephemeral_id dan pairing_code menjadi final device_id.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        ephemeral_id = request.data.get('ephemeral_id')
+        pairing_code  = request.data.get('pairing_code')
+        # Verifikasi pairing code (contoh: harus "ACPAIR2025")
+        if pairing_code != "ACPAIR2025":
+            return Response({'error': 'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
+        if not ephemeral_id:
+            return Response({'error': 'Ephemeral id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        # Hasilkan final device_id menggunakan UUID
+        final_device_id = "Accify_" + str(uuid.uuid4()).replace('-', '')[:12].upper()
+        device, created = IoTDevice.objects.update_or_create(
+            device_id=final_device_id,
+            defaults={'user': request.user, 'name': f"Device {request.user.username}"}
+        )
+        return Response({
+            'device_id': final_device_id,
+            'token': request.auth.key  # Contoh: menggunakan token user
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
 class RegisterDeviceView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
         serializer = IoTDeviceSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(user=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            device, created = IoTDevice.objects.update_or_create(
+                device_id=serializer.validated_data['device_id'],
+                defaults={'user': request.user, 'name': serializer.validated_data.get('name', '')}
+            )
+            return Response(IoTDeviceSerializer(device).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def get(self, request):
