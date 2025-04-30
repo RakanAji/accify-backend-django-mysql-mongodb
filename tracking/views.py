@@ -1,9 +1,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework import status
 from .models import IoTDevice, MongoDBManager
 from .serializers import IoTDeviceSerializer, LocationDataSerializer, AccidentSerializer
+from .authentication import DeviceTokenAuthentication
 from accounts.models import Contact, User
 from django.shortcuts import get_object_or_404
 import json
@@ -25,28 +27,67 @@ except Exception as e:
 
 class DevicePairingView(APIView):
     """
-    Endpoint pairing untuk mengkonversi ephemeral_id dan pairing_code menjadi final device_id.
+    User memasukkan ephemeral_id & pairing_code lewat mobile app.
+    Backend mengikat IoTDevice → user, simpan ephemeral_id & generate device_token.
     """
     permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ephemeral_id  = request.data.get('ephemeral_id')
+        pairing_code  = request.data.get('pairing_code')
+        # validasi pairing code
+        if pairing_code != "ACPAIR2025":
+            return Response({'error':'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
+        if not ephemeral_id:
+            return Response({'error':'Ephemeral ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # generate final device_id & device_token
+        final_device_id = "Accify_" + uuid.uuid4().hex[:12].upper()
+        new_token       = uuid.uuid4().hex  # 32-char hex
+
+        device, created = IoTDevice.objects.update_or_create(
+            ephemeral_id=ephemeral_id,
+            defaults={
+                'user': request.user,
+                'device_id': final_device_id,
+                'device_token': new_token,
+                'name': f"Device {request.user.username}"
+            }
+        )
+
+        return Response({
+            'device_id':   final_device_id,
+            'device_token': new_token
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
     
+class DeviceCredentialsView(APIView):
+    """
+    Dipanggil ESP32 tanpa auth header.
+    Input: ephemeral_id + pairing_code.
+    Output: device_id + device_token (jika sudah dipairing oleh user).
+    """
+    permission_classes = [AllowAny]
+
     def post(self, request):
         ephemeral_id = request.data.get('ephemeral_id')
-        pairing_code  = request.data.get('pairing_code')
-        # Verifikasi pairing code (contoh: harus "ACPAIR2025")
+        pairing_code = request.data.get('pairing_code')
         if pairing_code != "ACPAIR2025":
-            return Response({'error': 'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
-        if not ephemeral_id:
-            return Response({'error': 'Ephemeral id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        # Hasilkan final device_id menggunakan UUID
-        final_device_id = "Accify_" + str(uuid.uuid4()).replace('-', '')[:12].upper()
-        device, created = IoTDevice.objects.update_or_create(
-            device_id=final_device_id,
-            defaults={'user': request.user, 'name': f"Device {request.user.username}"}
-        )
+            return Response({'error':'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            device = IoTDevice.objects.get(ephemeral_id=ephemeral_id)
+        except IoTDevice.DoesNotExist:
+            return Response({'error':'Device not registered by any user yet'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if not device.device_token:
+            return Response({'error':'Device not paired by user yet'},
+                            status=status.HTTP_409_CONFLICT)
+
         return Response({
-            'device_id': final_device_id,
-            'token': request.auth.key  # Contoh: menggunakan token user
-        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+            'device_id':    device.device_id,
+            'device_token': device.device_token
+        }, status=status.HTTP_200_OK)
 
 class RegisterDeviceView(APIView):
     permission_classes = [IsAuthenticated]
@@ -67,39 +108,38 @@ class RegisterDeviceView(APIView):
         return Response(serializer.data)
 
 class TrackingDataView(APIView):
+    authentication_classes = [DeviceTokenAuthentication]
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
         serializer = LocationDataSerializer(data=request.data)
-        if serializer.is_valid():
-            device_id = serializer.validated_data['device_id']
-            
-            # Verifikasi bahwa device milik user yang terautentikasi
-            try:
-                device = IoTDevice.objects.get(device_id=device_id, user=request.user)
-            except IoTDevice.DoesNotExist:
-                return Response(
-                    {'error': 'Device not found or you do not have permission'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            # Simpan data ke MongoDB
-            mongo_manager = MongoDBManager()
-            inserted_id = mongo_manager.save_location_data(
-                device_id, 
-                serializer.validated_data
-            )
-            
-            # Jika terjadi kecelakaan, kirim notifikasi
-            if serializer.validated_data.get('is_accident', False):
-                self._send_accident_notification(request.user, serializer.validated_data)
-            
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Karena valid, request.user sudah = pemilik IoTDevice
+        device_id = serializer.validated_data['device_id']
+        # Pastikan device_id sesuai dengan device yang authenticated
+        if request.iot_device.device_id != device_id:
             return Response(
-                {'message': 'Location data saved successfully', 'id': str(inserted_id)},
-                status=status.HTTP_201_CREATED
+                {'error': 'Device ID mismatch'},
+                status=status.HTTP_403_FORBIDDEN
             )
+            
+        # Simpan data ke MongoDB
+        mongo_manager = MongoDBManager()
+        inserted_id = mongo_manager.save_location_data(
+            device_id, 
+            serializer.validated_data
+        )
+            
+        # Jika terjadi kecelakaan, kirim notifikasi
+        if serializer.validated_data.get('is_accident', False):
+            self._send_accident_notification(request.user, serializer.validated_data)
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'message': 'Location data saved', 'id': str(inserted_id)},
+            status=status.HTTP_201_CREATED
+        )
     
     def get(self, request):
         device_id = request.query_params.get('device_id')

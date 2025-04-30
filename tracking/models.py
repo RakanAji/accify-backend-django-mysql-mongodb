@@ -8,6 +8,8 @@ import datetime
 class IoTDevice(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="devices")
     device_id = models.CharField(max_length=100, unique=True)
+    ephemeral_id = models.CharField(max_length=32, unique=True, null=True, blank=True)
+    device_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     name = models.CharField(max_length=100)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
