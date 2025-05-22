@@ -21,10 +21,15 @@ class IoTDevice(models.Model):
 class MongoDBManager:
     def __init__(self):
         # Connect to MongoDB using settings from Django
-        self.client = MongoClient(
-            'mongodb://mongoAccify_user:123@localhost:27017/mongoAccify_db?authSource=mongoAccify_db'
+        uri = (
+            f"mongodb://"
+            f"{settings.MONGO_USER}:{settings.MONGO_PASSWORD}@"
+            f"{settings.MONGO_HOST}:{settings.MONGO_PORT}/"
+            f"{settings.MONGO_DB}"
+            f"?authSource=admin"
         )
-        self.db = self.client['mongoAccify_db']
+        self.client = MongoClient(uri)
+        self.db = self.client[settings.MONGO_DB]
     
     def save_location_data(self, device_id, data):
         """Save device location and speed data to MongoDB"""
