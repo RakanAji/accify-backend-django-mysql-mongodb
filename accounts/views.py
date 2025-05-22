@@ -34,6 +34,8 @@ class SignInView(APIView):
             token, _ = Token.objects.get_or_create(user=user)
             return Response({'token': token.key}, status=status.HTTP_200_OK)
         return Response({'error': 'Invalid Credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    
 
 
 class SignOutView(APIView):
@@ -54,7 +56,7 @@ class AddContactView(APIView):
         device_id = request.data.get('device_id')  # Ambil device_id dari request
 
         try:
-            contact_user = User.objects.get(username=contact_username)
+            contact_user = User.objects.get(username=contact_username, phonenumber=phone_number)
             if contact_user == request.user:
                 return Response({'error': 'You cannot add yourself as a contact.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -77,9 +79,11 @@ class UserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        token, _ = Token.objects.get_or_create(user=request.user)
         user_data = {
             'username': request.user.username,
             'email': request.user.email,
+            'auth_token': token.key,
             'contacts': [
                 {
                     'username': contact.contact.username,

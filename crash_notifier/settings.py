@@ -11,23 +11,29 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
-# import pymysql
-# pymysql.install_as_MySQLdb()
+import environ, os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+env = environ.Env(DEBUG=(bool, False))
+env.read_env(os.path.join(BASE_DIR, '.env'))
+MONGO_USER     = env('MONGO_USER')
+MONGO_PASSWORD = env('MONGO_PASSWORD')
+MONGO_DB       = env('MONGO_DB')
+MONGO_HOST     = env('MONGO_HOST', default='mongodb')
+MONGO_PORT     = env('MONGO_PORT')
+# import pymysql
+# pymysql.install_as_MySQLdb()
+
+
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-41+i9338)!lpy$d-r8&47(30q#sjb3t@$f1rit@x+%p$35$la('
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = ['*']
+SECRET_KEY = env('SECRET_KEY')
+DEBUG = env('DEBUG')
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
 
 
 # Application definition
@@ -103,22 +109,17 @@ WSGI_APPLICATION = 'crash_notifier.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'accify_db',
-        'USER': 'accify_user',
-        'PASSWORD': '1234',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'NAME': env('MYSQL_DATABASE'),
+        'USER': env('MYSQL_USER'),
+        'PASSWORD': env('MYSQL_PASSWORD'),
+        'HOST': 'mysql',          # Nama service docker-compose mysql
+        'PORT': env('MYSQL_PORT'),
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
     },
-    'mongodb': {
-        'ENGINE': 'djongo',
-        'NAME': 'mongoAccify_db',
-        'ENFORCE_SCHEMA': False,
-        'CLIENT': {
-            'host': 'mongodb://mongoAccify_user:123@localhost:27017/mongoAccify_db?authSource=mongoAccify_db',
-            'authMechanism': 'SCRAM-SHA-1'
-        }
-    }
 }
+
 DATABASE_ROUTERS = ['crash_notifier.db_router.MongoDBRouter']
 
 
@@ -167,7 +168,10 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
+# Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
+# ← wajib ditambahkan agar collectstatic tahu targetnya
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

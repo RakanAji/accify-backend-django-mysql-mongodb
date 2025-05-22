@@ -28,37 +28,52 @@ except Exception as e:
 class DevicePairingView(APIView):
     """
     User memasukkan ephemeral_id & pairing_code lewat mobile app.
-    Backend mengikat IoTDevice → user, simpan ephemeral_id & generate device_token.
+    - Kalau pairing pertama (ephemeral_id baru): generate device_id + device_token, simpan record.
+    - Kalau pairing ulang (ephemeral_id sama): reuse device_id dari record, generate device_token baru, update record.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         ephemeral_id  = request.data.get('ephemeral_id')
         pairing_code  = request.data.get('pairing_code')
-        # validasi pairing code
+
+        # Validasi pairing code
         if pairing_code != "ACPAIR2025":
-            return Response({'error':'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
         if not ephemeral_id:
-            return Response({'error':'Ephemeral ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Ephemeral ID is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # generate final device_id & device_token
-        final_device_id = "Accify_" + uuid.uuid4().hex[:12].upper()
-        new_token       = uuid.uuid4().hex  # 32-char hex
+        # Coba-cari record yang sudah ada untuk ephemeral_id ini
+        try:
+            device = IoTDevice.objects.get(ephemeral_id=ephemeral_id)
+            # Kalau ketemu, generate token baru saja (device_id tetap sama)
+            new_token = uuid.uuid4().hex
+            device.device_token = new_token
+            device.user = request.user       # ← opsional: jika ingin catat user terakhir yang pairing
+            device.name = f"Device {request.user.username}"  # ← opsional: update nama device
+            device.save(update_fields=['device_token', 'user', 'name'])
 
-        device, created = IoTDevice.objects.update_or_create(
-            ephemeral_id=ephemeral_id,
-            defaults={
-                'user': request.user,
-                'device_id': final_device_id,
-                'device_token': new_token,
-                'name': f"Device {request.user.username}"
-            }
-        )
+            return Response({
+                'device_id':    device.device_id,  # gunakan device_id lama
+                'device_token': new_token
+            }, status=status.HTTP_200_OK)
 
-        return Response({
-            'device_id':   final_device_id,
-            'device_token': new_token
-        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        except IoTDevice.DoesNotExist:
+            # Kalau belum ada record, ini pairing pertama
+            final_device_id = "Accify_" + uuid.uuid4().hex[:12].upper()
+            new_token       = uuid.uuid4().hex
+
+            device = IoTDevice.objects.create(
+                ephemeral_id=ephemeral_id,
+                user=request.user,
+                device_id=final_device_id,
+                device_token=new_token,
+                name=f"Device {request.user.username}"
+            )
+            return Response({
+                'device_id':    final_device_id,
+                'device_token': new_token
+            }, status=status.HTTP_201_CREATED)
     
 class DeviceCredentialsView(APIView):
     """
@@ -214,18 +229,40 @@ class TrackingDataView(APIView):
         # Cari rumah sakit terdekat dan kirim notifikasi
         self._notify_nearest_hospital(lat, lng, user)
     
-    def _send_fcm_notification(self, token, message):
+    def _send_fcm_notification(self, token, message_dict):
         """
-        Kirim notifikasi via Firebase Cloud Messaging
+        Kirim notifikasi via Firebase Cloud Messaging.
+        message_dict = {
+            'title': 'EMERGENCY: Accident Detected!',
+            'body': 'Your contact ... detected an accident.',
+            'data': { ... }  # opsional, kalau ingin kirim data tambahan
+        }
         """
         try:
             message = messaging.Message(
                 notification=messaging.Notification(
-                    title=message['title'],
-                    body=message['body'],
+                    title=message_dict['title'],
+                    body=message_dict['body'],
                 ),
-                data=message['data'],
+                data=message_dict.get('data', {}),
                 token=token,
+                android=messaging.AndroidConfig(
+                    priority='high',                    # Penting: high priority
+                    notification=messaging.AndroidNotification(
+                        channel_id='accident_alerts',   # ID channel (bisa apa saja, nanti kita buat di React Native)
+                        sound='default',                # Putar suara notifikasi default
+                        click_action='FLUTTER_NOTIFICATION_CLICK'  # atau action apapun
+                    )
+                ),
+                apns=messaging.APNSConfig(
+                    headers={'apns-priority': '10'},    # untuk iOS, kalau nanti dibutuhkan
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(
+                            sound='default',
+                            content_available=True            # biar iOS juga kebangun
+                        )
+                    )
+                )
             )
             response = messaging.send(message)
             print(f"FCM notification sent: {response}")
