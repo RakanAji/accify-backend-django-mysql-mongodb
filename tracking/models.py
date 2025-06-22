@@ -3,6 +3,7 @@ from accounts.models import User
 from pymongo import MongoClient
 from django.conf import settings
 import datetime
+from django.utils import timezone
 
 # Model relasional untuk MySQL (metadata)
 class IoTDevice(models.Model):
@@ -30,13 +31,30 @@ class MongoDBManager:
         )
         self.client = MongoClient(uri)
         self.db = self.client[settings.MONGO_DB]
+
+    def _convert_timestamps_to_wib(self, results):
+        """Helper method untuk konversi timestamp ke WIB."""
+        local_tz = timezone.get_default_timezone()
+        for doc in results:
+            if 'timestamp' in doc and doc['timestamp']:
+                original_timestamp = doc['timestamp']
+                
+                # Jika timestamp naive, anggap UTC dan buat aware
+                if timezone.is_naive(original_timestamp):
+                    aware_timestamp = timezone.make_aware(original_timestamp, datetime.timezone.utc)
+                else: # Jika sudah aware
+                    aware_timestamp = original_timestamp
+
+                # Konversi ke zona waktu lokal (WIB) dan update dokumen
+                doc['timestamp'] = aware_timestamp.astimezone(local_tz)
+        return results
     
     def save_location_data(self, device_id, data):
         """Save device location and speed data to MongoDB"""
         collection = self.db['location_data']
         document = {
             'device_id': device_id,
-            'timestamp': datetime.datetime.now(),
+            'timestamp': timezone.now(),
             'latitude': data.get('latitude'),
             'longitude': data.get('longitude'),
             'speed': data.get('speed', 0),
@@ -55,7 +73,9 @@ class MongoDBManager:
         """Get the most recent location data for a device"""
         collection = self.db['location_data']
         cursor = collection.find({'device_id': device_id}).sort('timestamp', -1).limit(limit)
-        return list(cursor)
+        results = list(cursor)
+        # Panggil helper konversi sebelum return
+        return self._convert_timestamps_to_wib(results)
     
     def get_accident_data(self, device_id=None):
         """Get all accident data, optionally filtered by device_id"""
@@ -64,4 +84,6 @@ class MongoDBManager:
         if device_id:
             query['device_id'] = device_id
         cursor = collection.find(query).sort('timestamp', -1)
-        return list(cursor)
+        results = list(cursor)
+        # Panggil helper konversi sebelum return
+        return self._convert_timestamps_to_wib(results)
