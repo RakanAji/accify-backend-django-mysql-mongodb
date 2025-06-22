@@ -16,6 +16,8 @@ import os
 from django.conf import settings
 import requests
 import uuid
+from django.utils import timezone
+import datetime
 
 # Inisialisasi Firebase untuk notifikasi (Anda perlu menambahkan konfigurasi ini)
 try:
@@ -24,6 +26,14 @@ try:
         firebase_admin.initialize_app(cred)
 except Exception as e:
     print(f"Error initializing Firebase: {e}")
+
+# Hardcoded mapping of ephemeral_id to pairing_code
+PAIRING_CODE_MAPPING = {
+    "B46A3665B7A0": "ACPAIR2025",
+    "B46A3665B7A1": "ACPAIR2026",
+    "B46A3665B7A2": "ACPAIR2027",
+    # Tambahkan lebih banyak pasangan ephemeral_id dan pairing_code di sini jika perlu
+}
 
 class DevicePairingView(APIView):
     """
@@ -34,14 +44,16 @@ class DevicePairingView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        ephemeral_id  = request.data.get('ephemeral_id')
-        pairing_code  = request.data.get('pairing_code')
+        ephemeral_id = request.data.get('ephemeral_id')
+        pairing_code = request.data.get('pairing_code')
 
-        # Validasi pairing code
-        if pairing_code != "ACPAIR2025":
-            return Response({'error': 'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
-        if not ephemeral_id:
-            return Response({'error': 'Ephemeral ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        # Validasi ephemeral_id ada dalam mapping
+        if ephemeral_id not in PAIRING_CODE_MAPPING:
+            return Response({'error': 'Invalid ephemeral ID'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validasi pairing_code sesuai dengan ephemeral_id
+        if pairing_code != PAIRING_CODE_MAPPING[ephemeral_id]:
+            return Response({'error': 'Invalid pairing code for this ephemeral ID'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Coba-cari record yang sudah ada untuk ephemeral_id ini
         try:
@@ -74,7 +86,7 @@ class DevicePairingView(APIView):
                 'device_id':    final_device_id,
                 'device_token': new_token
             }, status=status.HTTP_201_CREATED)
-    
+
 class DeviceCredentialsView(APIView):
     """
     Dipanggil ESP32 tanpa auth header.
@@ -86,17 +98,23 @@ class DeviceCredentialsView(APIView):
     def post(self, request):
         ephemeral_id = request.data.get('ephemeral_id')
         pairing_code = request.data.get('pairing_code')
-        if pairing_code != "ACPAIR2025":
-            return Response({'error':'Invalid pairing code'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validasi ephemeral_id ada dalam mapping
+        if ephemeral_id not in PAIRING_CODE_MAPPING:
+            return Response({'error': 'Invalid ephemeral ID'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validasi pairing_code sesuai dengan ephemeral_id
+        if pairing_code != PAIRING_CODE_MAPPING[ephemeral_id]:
+            return Response({'error': 'Invalid pairing code for this ephemeral ID'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             device = IoTDevice.objects.get(ephemeral_id=ephemeral_id)
         except IoTDevice.DoesNotExist:
-            return Response({'error':'Device not registered by any user yet'},
+            return Response({'error': 'Device not registered by any user yet'},
                             status=status.HTTP_404_NOT_FOUND)
 
         if not device.device_token:
-            return Response({'error':'Device not paired by user yet'},
+            return Response({'error': 'Device not paired by user yet'},
                             status=status.HTTP_409_CONFLICT)
 
         return Response({
@@ -215,7 +233,9 @@ class TrackingDataView(APIView):
                 # Jika Anda memiliki token Firebase untuk user, gunakan ini
                 # Asumsi: token FCM disimpan di profil user (Anda perlu menambahkan ini)
                 if hasattr(contact.contact, 'fcm_token') and contact.contact.fcm_token:
+                    print(f"FCM TOKEN BERHASIL")
                     self._send_fcm_notification(contact.contact.fcm_token, accident_message)
+                    
                 
                 # Kirim SMS ke nomor telepon kontak jika ada
                 if contact.phone_number:
@@ -349,6 +369,8 @@ class ContactRealtimeTrackingView(APIView):
         mongo_manager = MongoDBManager()
         result = []
 
+        
+
         for contact in contacts:
             # Pastikan kontak memiliki device_id
             if not contact.device_id:
@@ -361,6 +383,8 @@ class ContactRealtimeTrackingView(APIView):
                 data = realtime_data[0]
                 # Ubah ObjectId ke string jika diperlukan
                 data['_id'] = str(data['_id'])
+
+                
             else:
                 data = None
 

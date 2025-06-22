@@ -17,6 +17,15 @@ import environ, os
 BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(DEBUG=(bool, False))
 env.read_env(os.path.join(BASE_DIR, '.env'))
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # Ganti dengan provider Anda
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = env('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = env('EMAIL_HOST_USER')
+
 MONGO_USER     = env('MONGO_USER')
 MONGO_PASSWORD = env('MONGO_PASSWORD')
 MONGO_DB       = env('MONGO_DB')
@@ -122,6 +131,18 @@ DATABASES = {
 
 DATABASE_ROUTERS = ['crash_notifier.db_router.MongoDBRouter']
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-accify-otp-cache',
+        # 'BACKEND': 'django_redis.cache.RedisCache', # Contoh Redis
+        # 'LOCATION': 'redis://127.0.0.1:6379/1',     # Contoh Redis
+        # 'OPTIONS': {                                # Contoh Redis
+        #     'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        # }
+    }
+}
+
 
 # MongoDB configuration
 # from pymongo import MongoClient
@@ -158,7 +179,7 @@ AUTHENTICATION_BACKENDS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Jakarta'
 
 USE_I18N = True
 
